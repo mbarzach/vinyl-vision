@@ -1,0 +1,4 @@
+shazamio
+sounddevice
+requests
+Pillow
