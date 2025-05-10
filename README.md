@@ -141,10 +141,10 @@ This is intentional — to preserve pure, unaltered audio through a separate sig
 
 ---
 
-## Screenshot
+## Visual Output
 
-![Initial prototype](resources/first_prototype.jpg)
-*First working prototype showing HDMI output with album artwork*
+![Latest Prototype](resources/050925_prototype.jpg)
+*Latest prototype showing HDMI output with album artwork (05/09/2025)*
 
 ## Credits
 

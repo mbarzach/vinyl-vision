@@ -17,10 +17,12 @@ CHANNELS = 1
 SNIPPET_FILE = "snippet.wav"
 CHECK_INTERVAL = 30
 
-SCREEN_WIDTH = 1280  # Updated for 16:9 resolution
+SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 FONT_SIZE = 24
 LINE_SPACING = 8
+TEXT_SECTION_WIDTH = SCREEN_WIDTH // 3
+IMAGE_SECTION_WIDTH = SCREEN_WIDTH - TEXT_SECTION_WIDTH
 
 # === INIT PYGAME DISPLAY ===
 pygame.init()
@@ -29,33 +31,34 @@ pygame.display.set_caption("Vinyl Vision")
 font = pygame.font.SysFont("Arial", FONT_SIZE)
 clock = pygame.time.Clock()
 
-def draw_text_block(text, color=(255, 255, 255), y_offset=20, max_width=SCREEN_WIDTH - 40):
-    lines = []
-    words = text.split()
-    current_line = ""
-    for word in words:
-        test_line = f"{current_line} {word}".strip()
-        if font.size(test_line)[0] <= max_width:
-            current_line = test_line
-        else:
-            lines.append(current_line)
-            current_line = word
-    lines.append(current_line)
+def draw_text_info(metadata: dict, img_surface=None, signal_detected=False):
+    screen.fill((0, 0, 0))
 
-    for i, line in enumerate(lines):
-        rendered = font.render(line, True, color)
-        rect = rendered.get_rect(midtop=(SCREEN_WIDTH // 2, y_offset + i * (FONT_SIZE + LINE_SPACING)))
+    # Draw album art in left 2/3
+    if img_surface:
+        img_rect = img_surface.get_rect(center=(IMAGE_SECTION_WIDTH // 2, SCREEN_HEIGHT // 2))
+        screen.blit(img_surface, img_rect)
+
+    # Draw metadata in right 1/3, left-aligned and vertically centered
+    text_lines = [f"{label}: {value}" for label, value in metadata.items()]
+    total_text_height = len(text_lines) * (FONT_SIZE + LINE_SPACING)
+    y_start = (SCREEN_HEIGHT - total_text_height) // 2
+    x_left = IMAGE_SECTION_WIDTH - 10  # Adjusted to move text closer to image
+
+    for i, line in enumerate(text_lines):
+        rendered = font.render(line, True, (255, 255, 255))
+        rect = rendered.get_rect(topleft=(x_left, y_start + i * (FONT_SIZE + LINE_SPACING)))
         screen.blit(rendered, rect)
 
-def draw_image_with_text(img_surface, main_text="", sub_text=""):
-    screen.fill((0, 0, 0))
-    if img_surface:
-        img_rect = img_surface.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 40))
-        screen.blit(img_surface, img_rect)
-    if main_text:
-        draw_text_block(main_text, y_offset=20)
-    if sub_text:
-        draw_text_block(sub_text, y_offset=SCREEN_HEIGHT - 100)
+    # Draw audio signal indicator in top right
+    radius = 10
+    x_circle = SCREEN_WIDTH - 20
+    y_circle = 20
+    if signal_detected:
+        pygame.draw.circle(screen, (0, 255, 0), (x_circle, y_circle), radius)
+    else:
+        pygame.draw.circle(screen, (255, 255, 255), (x_circle, y_circle), radius, 2)
+
     pygame.display.flip()
 
 def load_album_image_from_url(url):
@@ -77,17 +80,24 @@ async def identify_song(file_path):
             track = out['track']
             title = track.get('title', 'Unknown')
             artist = track.get('subtitle', '')
+            album = next((m.get('text') for m in track.get('sections', [{}])[0].get('metadata', [])
+                         if m.get('title', '').lower() == 'album'), 'Unknown')
             image_url = track.get('images', {}).get('coverart', '')
-            return f"{title} - {artist}", image_url
+            return {
+                "Title": title,
+                "Artist": artist,
+                "Album": album
+            }, image_url
     except Exception as e:
         print(f"Error: Shazam error: {e}")
     return None, None
 
 # === MAIN LOOP ===
 current_img = None
-current_text = "Waiting for audio..."
-status_text = "Starting..."
-draw_image_with_text(current_img, current_text, status_text)
+current_metadata = {"Status": "Waiting for audio..."}
+signal_detected = False
+
+draw_text_info(current_metadata, current_img, signal_detected)
 
 while True:
     for event in pygame.event.get():
@@ -99,45 +109,50 @@ while True:
     while not match_found:
         try:
             for remaining in range(RECORD_SECONDS, 0, -1):
-                countdown_text = f"Listening... {remaining}s remaining"
-                draw_image_with_text(current_img, current_text, countdown_text)
+                draw_text_info(current_metadata, current_img, signal_detected)
                 time.sleep(1)
 
             print("Recording...")
-            recording = sd.rec(int(RECORD_SECONDS * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS, dtype='int16')
+            recording = sd.rec(int(RECORD_SECONDS * SAMPLE_RATE), samplerate=SAMPLE_RATE,
+                               channels=CHANNELS, dtype='int16')
             sd.wait()
             sd.stop()
             sd.sleep(100)
             write(SNIPPET_FILE, SAMPLE_RATE, recording)
 
-            # === DEBUGGING: Check if audio was detected ===
             amplitude = np.abs(recording).mean()
-            audio_status = "Audio signal detected" if amplitude > 100 else "Low or no audio signal"
-            print(f"Average amplitude: {amplitude:.2f} — {audio_status}")
-            draw_image_with_text(current_img, current_text, audio_status)
+            signal_detected = amplitude > 100
+            print(f"Average amplitude: {amplitude:.2f} — {'Detected' if signal_detected else 'Not detected'}")
+
+            current_metadata["Status"] = "Identifying track..."
+            draw_text_info(current_metadata, current_img, signal_detected)
             time.sleep(1)
 
             print("Sending to Shazam...")
-            draw_image_with_text(current_img, current_text, "Identifying track...")
-            title, image_url = asyncio.run(identify_song(SNIPPET_FILE))
+            metadata, image_url = asyncio.run(identify_song(SNIPPET_FILE))
 
-            if title and image_url:
+            if metadata and image_url:
                 new_img = load_album_image_from_url(image_url)
                 if new_img:
                     current_img = new_img
-                    current_text = title
-                    print(f"Found: {title}")
+                    current_metadata = metadata
+                    current_metadata["Status"] = "Match found."
+                    print(f"Found: {metadata['Title']} - {metadata['Artist']}")
                     match_found = True
+                    draw_text_info(current_metadata, current_img, signal_detected)
             else:
                 print("No match found. Retrying immediately...")
-                draw_image_with_text(current_img, current_text, "No match. Trying again...")
+                current_metadata = {"Status": "No match. Trying again..."}
+                draw_text_info(current_metadata, current_img, signal_detected)
                 time.sleep(1)
+
         except Exception as e:
             print(f"Audio error: {e}")
-            draw_image_with_text(current_img, current_text, f"Audio error. Retrying...")
+            current_metadata = {"Status": "Audio error. Retrying..."}
+            draw_text_info(current_metadata, current_img, False)
             time.sleep(2)
 
     for remaining in range(CHECK_INTERVAL, 0, -1):
-        status_text = f"Checking for new track in {remaining}s"
-        draw_image_with_text(current_img, current_text, status_text)
+        current_metadata["Status"] = f"Checking for new track in {remaining}s"
+        draw_text_info(current_metadata, current_img, signal_detected)
         time.sleep(1)
