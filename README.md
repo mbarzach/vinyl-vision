@@ -143,7 +143,7 @@ This is intentional — to preserve pure, unaltered audio through a separate sig
 
 ## Screenshot
 
-![Initial prototype](resources/IMG_3402.HEIC)
+![Initial prototype](resources/first_prototype.jpg)
 *First working prototype showing HDMI output with album artwork*
 
 ## Credits
