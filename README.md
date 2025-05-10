@@ -141,6 +141,11 @@ This is intentional — to preserve pure, unaltered audio through a separate sig
 
 ---
 
+## Screenshot
+
+![Initial prototype](resources/IMG_3402.HEIC)
+*First working prototype showing HDMI output with album artwork*
+
 ## Credits
 
 Built by Michael Barzach. Open to contributions.
