@@ -2,3 +2,5 @@ shazamio
 sounddevice
 requests
 Pillow
+scipy
+pygame
